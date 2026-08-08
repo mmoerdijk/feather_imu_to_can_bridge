@@ -59,15 +59,20 @@ once, this firmware repurposes four additional SERCOM peripherals as extra
 Notes:
 - Bus 4 repurposes `D0`/`D1`, which are normally `Serial1`'s RX/TX pins —
   don't expect `Serial1` to work while this firmware runs.
-- **None of buses 1-4 have onboard pull-ups.** Every bus (including bus 0,
-  which also has no pull-ups on this board revision) needs external
-  pull-up resistors on both SDA and SCL for the bus to reach a valid
-  idle-high state. A bus with no pull-ups will report every IMU on it as
+- **None of the buses have pull-ups on the Feather/adapter board itself.**
+  Pull-ups are provided by the IMU sensor boards, not something to add
+  separately — a bus with an IMU plugged in gets pull-ups from that board.
+  A bus with nothing plugged in has no pull-ups at all and never reaches a
+  valid idle-high state, which is why every IMU on it reports
   `OFFLINE (bus not ready -- check wiring/pull-ups)` — that's this specific
   failure mode, not a generic "not detected".
 - Bus/pin assignments live in `buses[]` in `src/imu.cpp`; which IMU index
   maps to which bus/address lives in `SENSOR_BUS[]` / `SENSOR_ADDR[]` right
   below it.
+
+Same information as a wiring diagram:
+
+![Wiring diagram: Feather M4 CAN with 5 I2C buses and 2 IMUs each](docs/images/wiring_diagram.svg)
 
 ## Status LED
 

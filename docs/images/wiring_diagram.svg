@@ -1,0 +1,140 @@
+<svg viewBox="0 0 1060 700" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    :root { color-scheme: light dark; }
+    .bg { fill: #ffffff; }
+    .board { fill: #eef2f7; stroke: #33415c; }
+    .imu { fill: #f4f8ff; stroke: #33415c; }
+    .line { stroke: #33415c; }
+    .text { fill: #1a2233; }
+    .subtext { fill: #55607a; }
+    .warn { fill: #7a3b00; }
+    .warnbox { fill: #fff6e6; stroke: #d99a2b; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1f27; }
+      .board { fill: #262c38; stroke: #9fb3d1; }
+      .imu { fill: #202634; stroke: #9fb3d1; }
+      .line { stroke: #b7c4dd; }
+      .text { fill: #eef2f9; }
+      .subtext { fill: #aab6cc; }
+      .warn { fill: #ffcf87; }
+      .warnbox { fill: #3a2f18; stroke: #d99a2b; }
+    }
+  </style>
+
+  <rect class="bg" x="0" y="0" width="1060" height="700"/>
+
+  <text class="text" x="530" y="26" font-size="20" font-weight="600" text-anchor="middle">
+    IMU wiring guide — 5 I2C buses, 2 IMUs each
+  </text>
+  <text class="subtext" x="530" y="44" font-size="12" text-anchor="middle">
+    per bus: top wire = SDA, bottom wire = SCL
+  </text>
+
+  <!-- Feather board -->
+  <rect class="board" x="30" y="73" width="140" height="547" rx="8" stroke-width="2"/>
+  <text class="text" x="100" y="102" font-size="14" font-weight="600" text-anchor="middle">Adafruit</text>
+  <text class="text" x="100" y="119" font-size="14" font-weight="600" text-anchor="middle">Feather M4 CAN</text>
+
+  <!-- Row 0: bus 0 / Wire (STEMMA QT), D21/D22, IMU0 0x6A + IMU1 0x6B -->
+  <g>
+    <text class="subtext" x="100" y="150" font-size="11" text-anchor="middle">bus 0 · STEMMA QT</text>
+    <text class="subtext" x="200" y="107" font-size="11" text-anchor="end">D21</text>
+    <line class="line" x1="200" y1="112" x2="1020" y2="112" stroke-width="2"/>
+    <text class="subtext" x="200" y="126" font-size="11" text-anchor="end">D22</text>
+    <line class="line" x1="200" y1="131" x2="1020" y2="131" stroke-width="2"/>
+    <line class="line" x1="742" y1="112" x2="742" y2="147" stroke-width="2"/>
+    <line class="line" x1="758" y1="131" x2="758" y2="147" stroke-width="2"/>
+    <line class="line" x1="942" y1="112" x2="942" y2="147" stroke-width="2"/>
+    <line class="line" x1="958" y1="131" x2="958" y2="147" stroke-width="2"/>
+    <rect class="imu" x="680" y="147" width="140" height="60" rx="6" stroke-width="2"/>
+    <text class="text" x="750" y="172" font-size="13" font-weight="600" text-anchor="middle">IMU0</text>
+    <text class="subtext" x="750" y="190" font-size="11" text-anchor="middle">LSM6DSV · 0x6A</text>
+    <rect class="imu" x="880" y="147" width="140" height="60" rx="6" stroke-width="2"/>
+    <text class="text" x="950" y="172" font-size="13" font-weight="600" text-anchor="middle">IMU1</text>
+    <text class="subtext" x="950" y="190" font-size="11" text-anchor="middle">LSM6DSV · 0x6B</text>
+  </g>
+
+  <!-- Row 1: bus 1, D12/D13, IMU2 0x6A + IMU3 0x6B -->
+  <g>
+    <text class="subtext" x="100" y="240" font-size="11" text-anchor="middle">bus 1</text>
+    <text class="subtext" x="200" y="197" font-size="11" text-anchor="end">D12</text>
+    <line class="line" x1="200" y1="202" x2="1020" y2="202" stroke-width="2"/>
+    <text class="subtext" x="200" y="216" font-size="11" text-anchor="end">D13</text>
+    <line class="line" x1="200" y1="221" x2="1020" y2="221" stroke-width="2"/>
+    <line class="line" x1="742" y1="202" x2="742" y2="237" stroke-width="2"/>
+    <line class="line" x1="758" y1="221" x2="758" y2="237" stroke-width="2"/>
+    <line class="line" x1="942" y1="202" x2="942" y2="237" stroke-width="2"/>
+    <line class="line" x1="958" y1="221" x2="958" y2="237" stroke-width="2"/>
+    <rect class="imu" x="680" y="237" width="140" height="60" rx="6" stroke-width="2"/>
+    <text class="text" x="750" y="262" font-size="13" font-weight="600" text-anchor="middle">IMU2</text>
+    <text class="subtext" x="750" y="280" font-size="11" text-anchor="middle">LSM6DSV · 0x6A</text>
+    <rect class="imu" x="880" y="237" width="140" height="60" rx="6" stroke-width="2"/>
+    <text class="text" x="950" y="262" font-size="13" font-weight="600" text-anchor="middle">IMU3</text>
+    <text class="subtext" x="950" y="280" font-size="11" text-anchor="middle">LSM6DSV · 0x6B</text>
+  </g>
+
+  <!-- Row 2: bus 2, A2/A3, IMU4 0x6A + IMU5 0x6B -->
+  <g>
+    <text class="subtext" x="100" y="330" font-size="11" text-anchor="middle">bus 2</text>
+    <text class="subtext" x="200" y="287" font-size="11" text-anchor="end">A2</text>
+    <line class="line" x1="200" y1="292" x2="1020" y2="292" stroke-width="2"/>
+    <text class="subtext" x="200" y="306" font-size="11" text-anchor="end">A3</text>
+    <line class="line" x1="200" y1="311" x2="1020" y2="311" stroke-width="2"/>
+    <line class="line" x1="742" y1="292" x2="742" y2="327" stroke-width="2"/>
+    <line class="line" x1="758" y1="311" x2="758" y2="327" stroke-width="2"/>
+    <line class="line" x1="942" y1="292" x2="942" y2="327" stroke-width="2"/>
+    <line class="line" x1="958" y1="311" x2="958" y2="327" stroke-width="2"/>
+    <rect class="imu" x="680" y="327" width="140" height="60" rx="6" stroke-width="2"/>
+    <text class="text" x="750" y="352" font-size="13" font-weight="600" text-anchor="middle">IMU4</text>
+    <text class="subtext" x="750" y="370" font-size="11" text-anchor="middle">LSM6DSV · 0x6A</text>
+    <rect class="imu" x="880" y="327" width="140" height="60" rx="6" stroke-width="2"/>
+    <text class="text" x="950" y="352" font-size="13" font-weight="600" text-anchor="middle">IMU5</text>
+    <text class="subtext" x="950" y="370" font-size="11" text-anchor="middle">LSM6DSV · 0x6B</text>
+  </g>
+
+  <!-- Row 3: bus 3, A4/A1, IMU6 0x6A + IMU7 0x6B -->
+  <g>
+    <text class="subtext" x="100" y="420" font-size="11" text-anchor="middle">bus 3</text>
+    <text class="subtext" x="200" y="377" font-size="11" text-anchor="end">A4</text>
+    <line class="line" x1="200" y1="382" x2="1020" y2="382" stroke-width="2"/>
+    <text class="subtext" x="200" y="396" font-size="11" text-anchor="end">A1</text>
+    <line class="line" x1="200" y1="401" x2="1020" y2="401" stroke-width="2"/>
+    <line class="line" x1="742" y1="382" x2="742" y2="417" stroke-width="2"/>
+    <line class="line" x1="758" y1="401" x2="758" y2="417" stroke-width="2"/>
+    <line class="line" x1="942" y1="382" x2="942" y2="417" stroke-width="2"/>
+    <line class="line" x1="958" y1="401" x2="958" y2="417" stroke-width="2"/>
+    <rect class="imu" x="680" y="417" width="140" height="60" rx="6" stroke-width="2"/>
+    <text class="text" x="750" y="442" font-size="13" font-weight="600" text-anchor="middle">IMU6</text>
+    <text class="subtext" x="750" y="460" font-size="11" text-anchor="middle">LSM6DSV · 0x6A</text>
+    <rect class="imu" x="880" y="417" width="140" height="60" rx="6" stroke-width="2"/>
+    <text class="text" x="950" y="442" font-size="13" font-weight="600" text-anchor="middle">IMU7</text>
+    <text class="subtext" x="950" y="460" font-size="11" text-anchor="middle">LSM6DSV · 0x6B</text>
+  </g>
+
+  <!-- Row 4: bus 4, D1/D0 (steals Serial1), IMU8 0x6A + IMU9 0x6B -->
+  <g>
+    <text class="subtext" x="100" y="508" font-size="11" text-anchor="middle">bus 4</text>
+    <text class="subtext" x="100" y="522" font-size="10" text-anchor="middle">(steals Serial1)</text>
+    <text class="subtext" x="200" y="467" font-size="11" text-anchor="end">D1</text>
+    <line class="line" x1="200" y1="472" x2="1020" y2="472" stroke-width="2"/>
+    <text class="subtext" x="200" y="486" font-size="11" text-anchor="end">D0</text>
+    <line class="line" x1="200" y1="491" x2="1020" y2="491" stroke-width="2"/>
+    <line class="line" x1="742" y1="472" x2="742" y2="507" stroke-width="2"/>
+    <line class="line" x1="758" y1="491" x2="758" y2="507" stroke-width="2"/>
+    <line class="line" x1="942" y1="472" x2="942" y2="507" stroke-width="2"/>
+    <line class="line" x1="958" y1="491" x2="958" y2="507" stroke-width="2"/>
+    <rect class="imu" x="680" y="507" width="140" height="60" rx="6" stroke-width="2"/>
+    <text class="text" x="750" y="532" font-size="13" font-weight="600" text-anchor="middle">IMU8</text>
+    <text class="subtext" x="750" y="550" font-size="11" text-anchor="middle">LSM6DSV · 0x6A</text>
+    <rect class="imu" x="880" y="507" width="140" height="60" rx="6" stroke-width="2"/>
+    <text class="text" x="950" y="532" font-size="13" font-weight="600" text-anchor="middle">IMU9</text>
+    <text class="subtext" x="950" y="550" font-size="11" text-anchor="middle">LSM6DSV · 0x6B</text>
+  </g>
+
+  <!-- Legend -->
+  <rect class="warnbox" x="30" y="640" width="1000" height="50" rx="6" stroke-width="1.5"/>
+  <text class="warn" x="45" y="659" font-size="12" font-weight="600">ℹ Pull-ups are provided by the IMU boards, not the Feather/adapter board.</text>
+  <text class="warn" x="45" y="676" font-size="12">
+    A bus with nothing plugged in has no pull-ups at all and reports OFFLINE (bus not ready). Each IMU's address is set by its SA0/SDO strap: tied low → 0x6A, tied high → 0x6B.
+  </text>
+</svg>

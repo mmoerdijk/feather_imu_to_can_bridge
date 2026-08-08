@@ -22,8 +22,9 @@ extern "C"
 // Bus 0 uses the board's default STEMMA QT Wire (SERCOM2, D21/D22).
 // Buses 1-4 repurpose SERCOM3/4/0/5, whose pads land on otherwise-free
 // header pins on this board (verified against the Feather M4 CAN schematic).
-// None of these pins carry onboard pull-ups -- every bus needs external
-// pull-up resistors on SDA/SCL.
+// None of these pins carry pull-ups on this board -- pull-ups come from
+// whichever IMU board is plugged into a given bus, not something to add
+// separately here.
 static TwoWire busWire1(&sercom3, 12, 13); // D12 (SDA), D13 (SCL) # tested works with 2 imus
 static TwoWire busWire2(&sercom4, 16, 17); // A2  (SDA), A3  (SCL) # tested works with 2 imus
 static TwoWire busWire3(&sercom0, 18, 15); // A4  (SDA), A1  (SCL) # tested works with 2 imus.
