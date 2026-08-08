@@ -23,6 +23,7 @@ I2C bus, for the IMU sensor boards.
 - [How detection & reconnect work](#how-detection--reconnect-work)
 - [Known quirks / gotchas](#known-quirks--gotchas)
 - [Repo layout](#repo-layout)
+- [License](#license)
 
 ## Hardware overview
 
@@ -317,3 +318,12 @@ docs/lsm6dsv.pdf                                 LSM6DSV datasheet
 docs/Adafruit Feather M4 Express CAN Pinout.pdf   Feather M4 CAN pinout reference
 platformio.ini            board/framework/library config
 ```
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+The vendored ST driver (`src/lsm6dsv_reg.c`, `include/lsm6dsv_reg.h`) is
+Copyright (c) STMicroelectronics and remains under ST's own license terms
+(see the header comment in those files) — it is not covered by this
+project's MIT license.
