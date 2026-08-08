@@ -5,6 +5,7 @@
 #include <stdio.h> // snprintf()
 #include <avr/dtostrf.h> // dtostrf() -- this core's own float-to-string emulation,
                           // since its libc snprintf has no %f support
+#include <Adafruit_NeoPixel.h>
 
 extern "C" {
 #include "lsm6dsv_reg.h"
@@ -49,6 +50,10 @@ struct i2c_target_t
   TwoWire *wire;
   uint8_t addr;
 };
+
+// Onboard NeoPixel (PIN_NEOPIXEL/PIN_NEOPIXEL_POWER from the board variant) --
+// power rail is already switched on for us by the core's initVariant().
+Adafruit_NeoPixel statusLed(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
 #define OFFLINE_RETRY_INTERVAL_MS 2000
 #define STATUS_PRINT_INTERVAL_MS 1000
@@ -216,6 +221,11 @@ static const char *initResultMessage(imu_init_result_t result)
 
 void setup()
 {
+  statusLed.begin();
+  statusLed.setBrightness(20);
+  statusLed.setPixelColor(0, statusLed.Color(0, 0, 255)); // blue: detecting
+  statusLed.show();
+
   Serial.begin(115200);
   while (!Serial)
   {
@@ -245,6 +255,7 @@ void setup()
 
   platform_delay(10); // sensor boot time
 
+  uint8_t presentCount = 0;
   for (uint8_t i = 0; i < NUM_IMUS; i++)
   {
     imu_init_result_t result = initImu(i);
@@ -254,11 +265,29 @@ void setup()
     // of the run, even if something is plugged into it later.
     imus[i].eligibleForRetry = imus[i].present;
     imus[i].nextRetryMs = millis() + OFFLINE_RETRY_INTERVAL_MS;
+    if (imus[i].present)
+    {
+      presentCount++;
+    }
 
     Serial.print("IMU");
     Serial.print(i);
     Serial.println(initResultMessage(result));
   }
+
+  // Report the detection count as white flashes, then settle to green --
+  // the LED's steady "everything's fine" run color.
+  for (uint8_t i = 0; i < presentCount; i++)
+  {
+    statusLed.setPixelColor(0, statusLed.Color(255, 255, 255));
+    statusLed.show();
+    delay(400);
+    statusLed.setPixelColor(0, 0);
+    statusLed.show();
+    delay(400);
+  }
+  statusLed.setPixelColor(0, statusLed.Color(0, 255, 0));
+  statusLed.show();
 }
 
 static uint32_t nextStatusPrintMs = 0;
@@ -374,6 +403,36 @@ void loop()
     {
       lsm6dsv_angular_rate_raw_get(&imus[i].ctx, data_raw);
     }
+  }
+
+  // Worst-current-state wins: red (something's offline right now) beats
+  // orange (recovered from a past drop) beats green (never had an issue).
+  bool anyOffline = false;
+  bool anyEverDisconnected = false;
+  for (uint8_t i = 0; i < NUM_IMUS; i++)
+  {
+    if (!imus[i].eligibleForRetry)
+    {
+      continue;
+    }
+    if (!imus[i].present)
+    {
+      anyOffline = true;
+    }
+    if (imus[i].disconnectCount > 0)
+    {
+      anyEverDisconnected = true;
+    }
+  }
+  uint32_t ledColor = anyOffline ? statusLed.Color(255, 0, 0)
+                      : anyEverDisconnected ? statusLed.Color(255, 80, 0)
+                                            : statusLed.Color(0, 255, 0);
+  static uint32_t lastLedColor = 0;
+  if (ledColor != lastLedColor)
+  {
+    lastLedColor = ledColor;
+    statusLed.setPixelColor(0, ledColor);
+    statusLed.show();
   }
 
   if ((int32_t)(now - nextStatusPrintMs) >= 0)
