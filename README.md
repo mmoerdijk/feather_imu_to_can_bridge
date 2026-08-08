@@ -196,7 +196,17 @@ All of this is available both as PlatformIO's own VS Code toolbar buttons
 (bottom status bar: checkmark = build, arrow = upload, plug icon =
 monitor) and as CLI commands (`pio`, available in any terminal once the
 PlatformIO IDE extension has installed its CLI, or via VS Code's
-integrated terminal):
+integrated terminal).
+
+The same tasks are also reachable from the PlatformIO sidebar: click the
+alien-head icon in the activity bar (**1**), then run a task like
+**Upload and Monitor** under *adafruit_feather_m4_can → General* (**2**) —
+this one builds, flashes, and immediately opens the serial monitor in one
+step:
+
+![PlatformIO sidebar: alien-head icon, then Upload and Monitor under General](docs/images/platform_io_upload.png)
+
+Or via the CLI:
 
 ```sh
 pio run                 # build
