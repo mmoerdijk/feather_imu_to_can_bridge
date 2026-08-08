@@ -1,6 +1,10 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <wiring_private.h> // pinPeripheral()
+#include <math.h> // NAN, isnan()
+#include <stdio.h> // snprintf()
+#include <avr/dtostrf.h> // dtostrf() -- this core's own float-to-string emulation,
+                          // since its libc snprintf has no %f support
 
 extern "C" {
 #include "lsm6dsv_reg.h"
@@ -29,14 +33,15 @@ struct bus_desc_t
   uint8_t pinSDA;
   uint8_t pinSCL;
   EPioType muxType; // mux function TwoWire::begin() needs forced onto pinSDA/pinSCL
+  bool claimed;      // true once claimBusIfIdle() has called wire->begin() on this bus
 };
 
 static bus_desc_t buses[NUM_BUSES] = {
-    {&Wire,     21, 22, PIO_SERCOM},     // default mux already correct
-    {&busWire1, 12, 13, PIO_SERCOM},     // SERCOM3 is the primary mux on D12/D13
-    {&busWire2, 16, 17, PIO_SERCOM_ALT}, // SERCOM4 is the alt mux on A2/A3
-    {&busWire3, 18, 15, PIO_SERCOM_ALT}, // SERCOM0 is the alt mux on A4/A1
-    {&busWire4, 1,  0,  PIO_SERCOM},     // SERCOM5 is the primary mux on D0/D1
+    {&Wire,     21, 22, PIO_SERCOM,     false}, // default mux already correct
+    {&busWire1, 12, 13, PIO_SERCOM,     false}, // SERCOM3 is the primary mux on D12/D13
+    {&busWire2, 16, 17, PIO_SERCOM_ALT, false}, // SERCOM4 is the alt mux on A2/A3
+    {&busWire3, 18, 15, PIO_SERCOM_ALT, false}, // SERCOM0 is the alt mux on A4/A1
+    {&busWire4, 1,  0,  PIO_SERCOM,     false}, // SERCOM5 is the primary mux on D0/D1
 };
 
 struct i2c_target_t
@@ -46,12 +51,20 @@ struct i2c_target_t
 };
 
 #define OFFLINE_RETRY_INTERVAL_MS 2000
+#define STATUS_PRINT_INTERVAL_MS 1000
+#define AUTO_RECONNECT_ENABLED true
+// LSM6DSV supports up to 1000000 (Fast-mode+); 400000 (Fast-mode) is a more
+// forgiving next step up from 100000 given the pull-up/wiring situation.
+#define I2C_CLOCK_HZ 400000
 
 struct imu_slot_t
 {
   i2c_target_t target;
   stmdev_ctx_t ctx;
   bool present;
+  bool eligibleForRetry;   // true only if this slot connected at the initial boot probe
+  uint16_t disconnectCount; // counts present->not-present transitions, not retry attempts
+  float lastAccelZmg;
   uint32_t nextRetryMs; // millis() timestamp of the next detect/re-detect attempt
 };
 
@@ -110,19 +123,45 @@ static void platform_delay(uint32_t ms)
 // A bus with no pull-ups (nothing wired to it yet, or a dead connection)
 // never reaches a valid idle-high state. The vendor SERCOM I2C driver's
 // transmission-start wait loop has no timeout and spins forever in that
-// case, so this check must happen *before* any blocking Wire call --
+// case, so idle must be confirmed *before* any blocking Wire call --
 // otherwise one unwired bus permanently freezes the whole sketch.
-static bool busIsIdle(bus_desc_t &bus)
+//
+// Once a bus is claimed (wire->begin() called), this never touches
+// pinMode() on its pins again. Empirically, doing a pinMode(INPUT) ->
+// pinPeripheral(restore) round-trip on an already-begin()'d bus breaks I2C
+// communication on it -- even on the very first transaction afterward, on
+// a bus/device that otherwise works fine (observed on bus0/SERCOM2 with a
+// real LSM6DSV attached). So the idle check only ever runs while a bus's
+// pins are still unclaimed plain GPIO (nothing active to disrupt); past
+// that point, retries rely on the I2C transaction's own error return to
+// detect a dead/removed sensor instead.
+static bool claimBusIfIdle(bus_desc_t &bus)
 {
+  if (bus.claimed)
+  {
+    return true;
+  }
+
   pinMode(bus.pinSDA, INPUT);
   pinMode(bus.pinSCL, INPUT);
   delayMicroseconds(50);
   bool idle = digitalRead(bus.pinSDA) == HIGH && digitalRead(bus.pinSCL) == HIGH;
+  if (!idle)
+  {
+    return false; // still unclaimed plain GPIO -- nothing to restore
+  }
 
-  // Restore the SERCOM mux pinMode() just switched away from.
+  bus.wire->begin();
+  // TwoWire::begin() re-applies each pin's *default* mux, which is wrong
+  // for pins whose I2C function is not their default (A1-A4, D12, D13) --
+  // force the correct SERCOM mux back onto them here. This is the pins'
+  // first-ever claim (unlike the old busIsIdle(), which repeated this on
+  // every retry), so there's no already-active peripheral to disrupt.
   pinPeripheral(bus.pinSDA, bus.muxType);
   pinPeripheral(bus.pinSCL, bus.muxType);
-  return idle;
+  bus.wire->setClock(I2C_CLOCK_HZ);
+  bus.claimed = true;
+  return true;
 }
 
 enum imu_init_result_t
@@ -136,7 +175,7 @@ enum imu_init_result_t
 // sensor that was missing at boot or that dropped off the bus and came back.
 static imu_init_result_t initImu(uint8_t i)
 {
-  if (!busIsIdle(buses[SENSOR_BUS[i]]))
+  if (!claimBusIfIdle(buses[SENSOR_BUS[i]]))
   {
     return IMU_INIT_BUS_NOT_READY;
   }
@@ -183,16 +222,9 @@ void setup()
     delay(10);
   }
 
-  for (uint8_t b = 0; b < NUM_BUSES; b++)
-  {
-    buses[b].wire->begin();
-    // TwoWire::begin() re-applies each pin's *default* mux, which is wrong
-    // for pins whose I2C function is not their default (A1-A4, D12, D13) --
-    // force the correct SERCOM mux back onto them here.
-    pinPeripheral(buses[b].pinSDA, buses[b].muxType);
-    pinPeripheral(buses[b].pinSCL, buses[b].muxType);
-    buses[b].wire->setClock(100000);
-  }
+  // Buses are claimed lazily, one at a time, the first time initImu() finds
+  // each one idle -- see claimBusIfIdle(). No eager wire->begin() loop here
+  // any more.
 
   for (uint8_t i = 0; i < NUM_IMUS; i++)
   {
@@ -205,6 +237,9 @@ void setup()
     imus[i].ctx.mdelay = platform_delay;
     imus[i].ctx.handle = &imuTargets[i];
     imus[i].present = false;
+    imus[i].eligibleForRetry = false;
+    imus[i].disconnectCount = 0;
+    imus[i].lastAccelZmg = NAN;
     imus[i].nextRetryMs = 0;
   }
 
@@ -214,6 +249,10 @@ void setup()
   {
     imu_init_result_t result = initImu(i);
     imus[i].present = (result == IMU_INIT_OK);
+    // Only sensors that respond at boot ever get retried again -- a slot
+    // that fails here is excluded from loop()'s retry logic for the rest
+    // of the run, even if something is plugged into it later.
+    imus[i].eligibleForRetry = imus[i].present;
     imus[i].nextRetryMs = millis() + OFFLINE_RETRY_INTERVAL_MS;
 
     Serial.print("IMU");
@@ -222,16 +261,73 @@ void setup()
   }
 }
 
+static uint32_t nextStatusPrintMs = 0;
+
+// Builds and prints every eligible IMU's status as fixed-width fields on one
+// line, in a fixed order (boot-time eligibility never changes at runtime),
+// so the printed line always has the same shape -- easy to eyeball a single
+// column changing over time in a terminal instead of scanning N lines.
+static void printStatusTable()
+{
+  char lineBuf[NUM_IMUS * 40 + 1];
+  size_t offset = 0;
+  bool first = true;
+
+  for (uint8_t i = 0; i < NUM_IMUS; i++)
+  {
+    if (!imus[i].eligibleForRetry)
+    {
+      continue; // never connected at boot -- excluded from the ongoing view
+    }
+
+    char zBuf[12];
+    if (isnan(imus[i].lastAccelZmg))
+    {
+      snprintf(zBuf, sizeof(zBuf), "%7s", "n/a");
+    }
+    else
+    {
+      // Not %7.1f via snprintf: this toolchain's libc has no float printf
+      // support by default and silently emits nothing for %f, rather than
+      // erroring -- dtostrf() is the portable Arduino-core way to format a
+      // float without depending on that.
+      dtostrf(imus[i].lastAccelZmg, 7, 1, zBuf);
+    }
+
+    int written = snprintf(
+        lineBuf + offset, sizeof(lineBuf) - offset,
+        "%sIMU%-2u %-7s drops=%3u z=%smg",
+        first ? "" : " | ",
+        i,
+        imus[i].present ? "ONLINE" : "OFFLINE",
+        imus[i].disconnectCount,
+        zBuf);
+    if (written > 0)
+    {
+      offset += written;
+    }
+    first = false;
+  }
+
+  Serial.println(lineBuf);
+}
+
 void loop()
 {
   uint32_t now = millis();
 
   for (uint8_t i = 0; i < NUM_IMUS; i++)
   {
+    if (!imus[i].eligibleForRetry)
+    {
+      // Never responded at boot -- permanently excluded, not just offline.
+      continue;
+    }
+
     if (!imus[i].present)
     {
-      // Periodically re-probe an offline sensor so it comes back automatically
-      // if it was plugged in late or recovered from a bus glitch.
+#if AUTO_RECONNECT_ENABLED
+      // Periodically re-probe a sensor that dropped after previously working.
       if ((int32_t)(now - imus[i].nextRetryMs) >= 0)
       {
         imus[i].nextRetryMs = now + OFFLINE_RETRY_INTERVAL_MS;
@@ -242,6 +338,7 @@ void loop()
         Serial.print(i);
         Serial.println(imus[i].present ? ": back online" : initResultMessage(result));
       }
+#endif
       continue;
     }
 
@@ -249,8 +346,9 @@ void loop()
     if (lsm6dsv_flag_data_ready_get(&imus[i].ctx, &drdy) != 0)
     {
       // Lost communication with a previously-working sensor -- mark it
-      // offline so it gets reported and retried like any other missing IMU.
+      // offline so it gets reported and (if enabled) retried.
       imus[i].present = false;
+      imus[i].disconnectCount++;
       imus[i].nextRetryMs = now + OFFLINE_RETRY_INTERVAL_MS;
 
       Serial.print("IMU");
@@ -269,29 +367,18 @@ void loop()
     if (drdy.drdy_xl)
     {
       lsm6dsv_acceleration_raw_get(&imus[i].ctx, data_raw);
-
-      Serial.print("IMU");
-      Serial.print(i);
-      Serial.print(" Accel [mg] X: ");
-      Serial.print(lsm6dsv_from_fs4_to_mg(data_raw[0]));
-      Serial.print(" Y: ");
-      Serial.print(lsm6dsv_from_fs4_to_mg(data_raw[1]));
-      Serial.print(" Z: ");
-      Serial.println(lsm6dsv_from_fs4_to_mg(data_raw[2]));
+      imus[i].lastAccelZmg = lsm6dsv_from_fs4_to_mg(data_raw[2]);
     }
 
     if (drdy.drdy_gy)
     {
       lsm6dsv_angular_rate_raw_get(&imus[i].ctx, data_raw);
-
-      Serial.print("IMU");
-      Serial.print(i);
-      Serial.print(" Gyro [mdps] X: ");
-      Serial.print(lsm6dsv_from_fs2000_to_mdps(data_raw[0]));
-      Serial.print(" Y: ");
-      Serial.print(lsm6dsv_from_fs2000_to_mdps(data_raw[1]));
-      Serial.print(" Z: ");
-      Serial.println(lsm6dsv_from_fs2000_to_mdps(data_raw[2]));
     }
+  }
+
+  if ((int32_t)(now - nextStatusPrintMs) >= 0)
+  {
+    nextStatusPrintMs = now + STATUS_PRINT_INTERVAL_MS;
+    printStatusTable();
   }
 }
