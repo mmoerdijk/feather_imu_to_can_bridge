@@ -1,0 +1,12 @@
+---
+BasedOnStyle: LLVM
+IndentWidth: 2
+ColumnLimit: 100
+BreakBeforeBraces: Allman
+PointerAlignment: Right
+ReferenceAlignment: Right
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: false
+IndentCaseLabels: true
+SpaceBeforeParens: ControlStatements
