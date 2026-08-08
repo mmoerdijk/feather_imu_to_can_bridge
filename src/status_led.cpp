@@ -1,5 +1,5 @@
-#include <Adafruit_NeoPixel.h>
 #include "status_led.h"
+#include <Adafruit_NeoPixel.h>
 
 // Onboard NeoPixel (PIN_NEOPIXEL/PIN_NEOPIXEL_POWER from the board variant) --
 // power rail is already switched on for us by the core's initVariant().
@@ -34,7 +34,7 @@ void ledUpdateRunState(bool anyOffline, bool anyEverDisconnected)
 {
   // Worst-current-state wins: red (something's offline right now) beats
   // orange (recovered from a past drop) beats green (never had an issue).
-  uint32_t ledColor = anyOffline ? statusLed.Color(255, 0, 0)
+  uint32_t ledColor = anyOffline            ? statusLed.Color(255, 0, 0)
                       : anyEverDisconnected ? statusLed.Color(255, 80, 0)
                                             : statusLed.Color(0, 255, 0);
   static uint32_t lastLedColor = 0;

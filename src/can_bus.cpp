@@ -1,6 +1,6 @@
+#include "can_bus.h"
 #include <Arduino.h>
 #include <CANSAME5x.h>
-#include "can_bus.h"
 
 // Onboard CAN transceiver (CANSAME5x wraps the SAME51's built-in CAN0, fixed
 // to PIN_CAN_TX/PIN_CAN_RX -- separate pins from the I2C buses used for the
@@ -22,7 +22,8 @@ void canBusInit()
   pinMode(PIN_CAN_BOOSTEN, OUTPUT);
   digitalWrite(PIN_CAN_BOOSTEN, HIGH); // turn on booster
   canReady = CAN.begin(CAN_BITRATE);
-  Serial.println(canReady ? "CAN: started" : "CAN: failed to start -- IMU data won't be sent over CAN");
+  Serial.println(canReady ? "CAN: started"
+                          : "CAN: failed to start -- IMU data won't be sent over CAN");
 #if CAN_LOOPBACK_VERIFY_ENABLED
   if (canReady)
   {
@@ -65,9 +66,12 @@ void sendCanFrame(uint32_t id, uint16_t v0, uint16_t v1, uint16_t v2, uint8_t &s
   }
 
   uint8_t payload[8] = {
-      (uint8_t)(v0 & 0xFF), (uint8_t)(v0 >> 8),
-      (uint8_t)(v1 & 0xFF), (uint8_t)(v1 >> 8),
-      (uint8_t)(v2 & 0xFF), (uint8_t)(v2 >> 8),
+      (uint8_t)(v0 & 0xFF),
+      (uint8_t)(v0 >> 8),
+      (uint8_t)(v1 & 0xFF),
+      (uint8_t)(v1 >> 8),
+      (uint8_t)(v2 & 0xFF),
+      (uint8_t)(v2 >> 8),
       seq++,
       0,
   };

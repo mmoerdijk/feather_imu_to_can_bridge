@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: Build firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Build
+        run: pio run
+
+  lint:
+    name: Formatting (clang-format, ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install formatters
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang-format
+          pip install -U ruff
+
+      # Runs the same lefthook config used for the local pre-commit hook,
+      # against every file (not just staged ones), and fails if anything
+      # would be reformatted -- lefthook itself needs no install step here
+      # since npx runs it straight from the registry.
+      - name: Run lefthook pre-commit checks
+        run: npx --yes lefthook run pre-commit --all-files --no-stage-fixed --fail-on-changes

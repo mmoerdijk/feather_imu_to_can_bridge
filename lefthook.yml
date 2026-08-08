@@ -3,7 +3,11 @@ pre-commit:
   commands:
     clang-format:
       glob: "*.{c,h,cpp,hpp}"
-      exclude: "(^|/)lsm6dsv_reg\\.(c|h)$" # vendored ST driver -- do not reformat
+      # vendored ST driver -- do not reformat. `exclude` takes globs, not
+      # regex (unlike `glob`, which supports {a,b} alternation).
+      exclude:
+        - "src/lsm6dsv_reg.c"
+        - "include/lsm6dsv_reg.h"
       run: clang-format -i {staged_files}
       stage_fixed: true
     ruff-format:

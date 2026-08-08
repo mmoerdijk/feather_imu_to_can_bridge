@@ -1,14 +1,15 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <wiring_private.h> // pinPeripheral()
+#include <avr/dtostrf.h>    // dtostrf() -- this core's own float-to-string emulation,
 #include <math.h>           // NAN, isnan(), lroundf()
 #include <stdio.h>          // snprintf()
-#include <avr/dtostrf.h>    // dtostrf() -- this core's own float-to-string emulation,
+#include <wiring_private.h> // pinPeripheral()
                             // since its libc snprintf has no %f support
-#include "imu.h"
 #include "can_bus.h"
+#include "imu.h"
 
-extern "C" {
+extern "C"
+{
 #include "lsm6dsv_reg.h"
 }
 
@@ -26,7 +27,9 @@ extern "C" {
 static TwoWire busWire1(&sercom3, 12, 13); // D12 (SDA), D13 (SCL) # tested works with 2 imus
 static TwoWire busWire2(&sercom4, 16, 17); // A2  (SDA), A3  (SCL) # tested works with 2 imus
 static TwoWire busWire3(&sercom0, 18, 15); // A4  (SDA), A1  (SCL) # tested works with 2 imus.
-static TwoWire busWire4(&sercom5, 1, 0);   // D1  (SDA), D0  (SCL) # tested works with 2 imus. -- takes over Serial1's pins
+static TwoWire
+    busWire4(&sercom5, 1,
+             0); // D1  (SDA), D0  (SCL) # tested works with 2 imus. -- takes over Serial1's pins
 
 struct bus_desc_t
 {
@@ -34,15 +37,15 @@ struct bus_desc_t
   uint8_t pinSDA;
   uint8_t pinSCL;
   EPioType muxType; // mux function TwoWire::begin() needs forced onto pinSDA/pinSCL
-  bool claimed;      // true once claimBusIfIdle() has called wire->begin() on this bus
+  bool claimed;     // true once claimBusIfIdle() has called wire->begin() on this bus
 };
 
 static bus_desc_t buses[NUM_BUSES] = {
-    {&Wire,     21, 22, PIO_SERCOM,     false}, // default mux already correct
-    {&busWire1, 12, 13, PIO_SERCOM,     false}, // SERCOM3 is the primary mux on D12/D13
+    {&Wire, 21, 22, PIO_SERCOM, false},         // default mux already correct
+    {&busWire1, 12, 13, PIO_SERCOM, false},     // SERCOM3 is the primary mux on D12/D13
     {&busWire2, 16, 17, PIO_SERCOM_ALT, false}, // SERCOM4 is the alt mux on A2/A3
     {&busWire3, 18, 15, PIO_SERCOM_ALT, false}, // SERCOM0 is the alt mux on A4/A1
-    {&busWire4, 1,  0,  PIO_SERCOM,     false}, // SERCOM5 is the primary mux on D0/D1
+    {&busWire4, 1, 0, PIO_SERCOM, false},       // SERCOM5 is the primary mux on D0/D1
 };
 
 struct i2c_target_t
@@ -78,11 +81,8 @@ static imu_slot_t imus[NUM_IMUS];
 // bus index and I2C address for each of the 10 IMUs (2 per bus)
 static const uint8_t SENSOR_BUS[NUM_IMUS] = {0, 0, 1, 1, 2, 2, 3, 3, 4, 4};
 static const uint8_t SENSOR_ADDR[NUM_IMUS] = {
-    LSM6DSV_ADDR_L, LSM6DSV_ADDR_H,
-    LSM6DSV_ADDR_L, LSM6DSV_ADDR_H,
-    LSM6DSV_ADDR_L, LSM6DSV_ADDR_H,
-    LSM6DSV_ADDR_L, LSM6DSV_ADDR_H,
-    LSM6DSV_ADDR_L, LSM6DSV_ADDR_H,
+    LSM6DSV_ADDR_L, LSM6DSV_ADDR_H, LSM6DSV_ADDR_L, LSM6DSV_ADDR_H, LSM6DSV_ADDR_L,
+    LSM6DSV_ADDR_H, LSM6DSV_ADDR_L, LSM6DSV_ADDR_H, LSM6DSV_ADDR_L, LSM6DSV_ADDR_H,
 };
 
 static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len)
@@ -119,10 +119,7 @@ static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t 
   return 0;
 }
 
-static void platform_delay(uint32_t ms)
-{
-  delay(ms);
-}
+static void platform_delay(uint32_t ms) { delay(ms); }
 
 // A bus with no pull-ups (nothing wired to it yet, or a dead connection)
 // never reaches a valid idle-high state. The vendor SERCOM I2C driver's
@@ -230,12 +227,12 @@ static const char *initResultMessage(imu_init_result_t result)
 {
   switch (result)
   {
-  case IMU_INIT_OK:
-    return ": initialized";
-  case IMU_INIT_BUS_NOT_READY:
-    return ": OFFLINE (bus not ready -- check wiring/pull-ups)";
-  default:
-    return ": OFFLINE (not detected)";
+    case IMU_INIT_OK:
+      return ": initialized";
+    case IMU_INIT_BUS_NOT_READY:
+      return ": OFFLINE (bus not ready -- check wiring/pull-ups)";
+    default:
+      return ": OFFLINE (not detected)";
   }
 }
 
@@ -288,10 +285,7 @@ void imuSystemInit()
   }
 }
 
-uint8_t imuPresentCount()
-{
-  return presentCountAtBoot;
-}
+uint8_t imuPresentCount() { return presentCountAtBoot; }
 
 // Builds and prints every eligible IMU's status as fixed-width fields on one
 // line, in a fixed order (boot-time eligibility never changes at runtime),
@@ -300,7 +294,7 @@ uint8_t imuPresentCount()
 static void printStatusTable()
 {
   char lineBuf[NUM_IMUS * 40 + 1] = {0}; // zeroed: if no IMU is eligible, offset stays 0 and
-                                          // this must still be a valid (empty) C string
+                                         // this must still be a valid (empty) C string
   size_t offset = 0;
   bool first = true;
 
@@ -325,14 +319,9 @@ static void printStatusTable()
       dtostrf(imus[i].lastAccelZmg, 7, 1, zBuf);
     }
 
-    int written = snprintf(
-        lineBuf + offset, sizeof(lineBuf) - offset,
-        "%sIMU%-2u %-7s drops=%3u z=%smg",
-        first ? "" : " | ",
-        i,
-        imus[i].present ? "ONLINE" : "OFFLINE",
-        imus[i].disconnectCount,
-        zBuf);
+    int written = snprintf(lineBuf + offset, sizeof(lineBuf) - offset,
+                           "%sIMU%-2u %-7s drops=%3u z=%smg", first ? "" : " | ", i,
+                           imus[i].present ? "ONLINE" : "OFFLINE", imus[i].disconnectCount, zBuf);
     if (written > 0)
     {
       offset += written;
@@ -408,12 +397,9 @@ void imuSystemPoll(uint32_t now)
         lsm6dsv_acceleration_raw_get(&imus[i].ctx, data_raw);
         imus[i].lastAccelZmg = lsm6dsv_from_fs4_to_mg(data_raw[2]);
 
-        sendCanFrame(
-            CAN_ID_ACCEL_BASE + i,
-            (int16_t)lroundf(lsm6dsv_from_fs4_to_mg(data_raw[0])),
-            (int16_t)lroundf(lsm6dsv_from_fs4_to_mg(data_raw[1])),
-            (int16_t)lroundf(imus[i].lastAccelZmg),
-            imus[i].accelCanSeq);
+        sendCanFrame(CAN_ID_ACCEL_BASE + i, (int16_t)lroundf(lsm6dsv_from_fs4_to_mg(data_raw[0])),
+                     (int16_t)lroundf(lsm6dsv_from_fs4_to_mg(data_raw[1])),
+                     (int16_t)lroundf(imus[i].lastAccelZmg), imus[i].accelCanSeq);
       }
 
       if (drdy.drdy_gy)
@@ -421,12 +407,11 @@ void imuSystemPoll(uint32_t now)
         lsm6dsv_angular_rate_raw_get(&imus[i].ctx, data_raw);
 
         // 0.1 dps/LSB: mdps/100 rounds to the nearest tenth of a degree/sec.
-        sendCanFrame(
-            CAN_ID_GYRO_BASE + i,
-            (int16_t)lroundf(lsm6dsv_from_fs2000_to_mdps(data_raw[0]) / 100.0f),
-            (int16_t)lroundf(lsm6dsv_from_fs2000_to_mdps(data_raw[1]) / 100.0f),
-            (int16_t)lroundf(lsm6dsv_from_fs2000_to_mdps(data_raw[2]) / 100.0f),
-            imus[i].gyroCanSeq);
+        sendCanFrame(CAN_ID_GYRO_BASE + i,
+                     (int16_t)lroundf(lsm6dsv_from_fs2000_to_mdps(data_raw[0]) / 100.0f),
+                     (int16_t)lroundf(lsm6dsv_from_fs2000_to_mdps(data_raw[1]) / 100.0f),
+                     (int16_t)lroundf(lsm6dsv_from_fs2000_to_mdps(data_raw[2]) / 100.0f),
+                     imus[i].gyroCanSeq);
       }
     }
 
@@ -477,12 +462,6 @@ void imuSystemPoll(uint32_t now)
   }
 }
 
-bool imuAnyOffline()
-{
-  return cachedAnyOffline;
-}
+bool imuAnyOffline() { return cachedAnyOffline; }
 
-bool imuAnyEverDisconnected()
-{
-  return cachedAnyEverDisconnected;
-}
+bool imuAnyEverDisconnected() { return cachedAnyEverDisconnected; }

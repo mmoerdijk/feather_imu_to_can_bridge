@@ -1,7 +1,7 @@
-#include <Arduino.h>
 #include "can_bus.h"
 #include "imu.h"
 #include "status_led.h"
+#include <Arduino.h>
 
 void setup()
 {
