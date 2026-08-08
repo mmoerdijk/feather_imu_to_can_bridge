@@ -1,9 +1,10 @@
 # IMU Reader — Feather M4 CAN
 
 Firmware for an Adafruit Feather M4 CAN Express that reads up to 10 ST
-LSM6DSV IMUs over five parallel I2C buses, reports per-sensor connection
-health over USB Serial, and shows an at-a-glance health summary on the
-board's onboard NeoPixel.
+LSM6DSV IMUs over five parallel I2C buses, sends accelerometer, gyroscope,
+and orientation (quaternion) data out over CAN, reports per-sensor
+connection health over USB Serial, and shows an at-a-glance health summary
+on the board's onboard NeoPixel.
 
 This board sits on a custom adapter/carrier PCB (see the sibling
 `adapter_board` repo) that breaks out 10 AYF530435 FPC connectors, two per
@@ -15,24 +16,25 @@ I2C bus, for the IMU sensor boards.
 - [I2C bus topology](#i2c-bus-topology)
 - [Status LED](#status-led)
 - [Serial output](#serial-output)
+- [CAN output](#can-output)
 - [Setting up PlatformIO (VS Code)](#setting-up-platformio-vs-code)
 - [Building, flashing, monitoring](#building-flashing-monitoring)
 - [Configuration](#configuration)
 - [How detection & reconnect work](#how-detection--reconnect-work)
 - [Known quirks / gotchas](#known-quirks--gotchas)
 - [Repo layout](#repo-layout)
-- [Not implemented yet](#not-implemented-yet)
 
 ## Hardware overview
 
 - **MCU board**: Adafruit Feather M4 CAN Express (SAME51J19A, Cortex-M4,
-  120 MHz). Datasheet/pinout: `docs/Adafruit Feather M4 Express CAN
-  Pinout.pdf`.
-- **Sensors**: up to 10x ST **LSM6DSV** 6-axis IMU (accel + gyro).
-  Datasheet: `docs/lsm6dsv.pdf`. Driver: ST's own register-level driver,
-  vendored in `src/lsm6dsv_reg.c` / `include/lsm6dsv_reg.h` (do not hand-edit
-  — it's the ST source, regenerate/replace wholesale if it ever needs
-  updating).
+  120 MHz), with an onboard CAN transceiver. Datasheet/pinout:
+  `docs/Adafruit Feather M4 Express CAN Pinout.pdf`.
+- **Sensors**: up to 10x ST **LSM6DSV** 6-axis IMU (accel + gyro), which also
+  has an onboard sensor-fusion engine (SFLP) that computes an orientation
+  quaternion in hardware. Datasheet: `docs/lsm6dsv.pdf`. Driver: ST's own
+  register-level driver, vendored in `src/lsm6dsv_reg.c` /
+  `include/lsm6dsv_reg.h` (do not hand-edit — it's the ST source,
+  regenerate/replace wholesale if it ever needs updating).
 - **Status indicator**: the Feather's onboard NeoPixel (single WS2812-style
   RGB LED, `PIN_NEOPIXEL` on the board).
 - Each IMU's I2C address is set in hardware by strapping its SA0/SDO pin:
@@ -62,9 +64,9 @@ Notes:
   idle-high state. A bus with no pull-ups will report every IMU on it as
   `OFFLINE (bus not ready -- check wiring/pull-ups)` — that's this specific
   failure mode, not a generic "not detected".
-- Bus/pin assignments live in `buses[]` in `src/main.cpp`; which IMU index
-  maps to which bus/address lives in `SENSOR_BUS[]` / `SENSOR_ADDR[]`
-  right below it.
+- Bus/pin assignments live in `buses[]` in `src/imu.cpp`; which IMU index
+  maps to which bus/address lives in `SENSOR_BUS[]` / `SENSOR_ADDR[]` right
+  below it.
 
 ## Status LED
 
@@ -85,10 +87,11 @@ intentional, it's a "has this run been perfectly clean" indicator, not just
 
 ## Serial output
 
-Open a serial monitor at **115200 baud**. At boot you get one line per IMU
-slot, in order:
+Open a serial monitor at **115200 baud**. At boot you get a CAN status
+line, then one line per IMU slot, in order:
 
 ```
+CAN: started
 IMU0: initialized
 IMU1: initialized
 IMU2: OFFLINE (bus not ready -- check wiring/pull-ups)
@@ -97,7 +100,8 @@ IMU2: OFFLINE (bus not ready -- check wiring/pull-ups)
 
 After that, once per second (`STATUS_PRINT_INTERVAL_MS`), a single
 fixed-width status line is printed for every IMU that *did* respond at
-boot (others are permanently omitted — see below):
+boot (others are permanently omitted — see below), or `no IMU detected` if
+none did:
 
 ```
 IMU0  ONLINE  drops=  0 z= -444.6mg | IMU1  ONLINE  drops=  0 z=  204.5mg
@@ -110,6 +114,55 @@ printed live per-sample — only this cached table).
 Between status lines, transition events are still printed immediately as
 they happen, e.g. `IMU0: OFFLINE (lost communication)` or `IMU0: back
 online`.
+
+## CAN output
+
+Each online IMU's accelerometer, gyroscope, and orientation data is sent
+out over the Feather's onboard CAN transceiver as it becomes available —
+there's no batching/timer, a frame goes out the moment new data is read.
+
+- **Library**: [Adafruit CAN](https://github.com/adafruit/Adafruit_CAN)
+  (`CANSAME5x` class), which wraps the SAME51's built-in CAN0 peripheral.
+- **Bitrate**: 1 Mbps (`CAN_BITRATE` in `src/can_bus.cpp`).
+- **Frame size**: classic CAN, 8 bytes max (no CAN FD).
+
+Every frame has the same shape — 3 values (2 bytes each, little-endian) + a
+1-byte sequence counter + 1 reserved byte:
+
+| Bytes | Field |
+|-------|-------|
+| 0-1 | value 0 |
+| 2-3 | value 1 |
+| 4-5 | value 2 |
+| 6 | sequence counter (wraps 0-255, one counter per IMU per data type — lets a receiver detect dropped frames) |
+| 7 | reserved (`0x00`) |
+
+| Data | CAN IDs | Values | Encoding |
+|------|---------|--------|----------|
+| Accelerometer | `0x100`-`0x109` (IMU `i` → `0x100+i`) | X, Y, Z acceleration | `int16`, 1 mg/LSB |
+| Gyroscope | `0x110`-`0x119` (IMU `i` → `0x110+i`) | X, Y, Z angular rate | `int16`, 0.1 dps/LSB |
+| Quaternion | `0x120`-`0x129` (IMU `i` → `0x120+i`) | qx, qy, qz | raw IEEE-754 half-precision float bits, passed through unmodified |
+
+**Quaternion note**: the LSM6DSV computes orientation in hardware via its
+SFLP ("Sensor Fusion Low Power") **Game Rotation Vector** engine, delivered
+through the sensor's FIFO rather than a simple data-ready register like
+accel/gyro (see `initImu()`'s SFLP setup and the FIFO-drain loop in
+`imuSystemPoll()`, both in `src/imu.cpp`). The sensor only ever outputs 3 of
+the 4 quaternion components (qx, qy, qz) as half-precision floats — **qw is
+never transmitted**. Since it's a unit quaternion, a receiver that needs the
+full 4-component form reconstructs it itself:
+`qw = sqrt(max(0, 1 - qx² - qy² - qz²))`. The firmware does zero conversion
+for this frame — it copies the FIFO record's raw bytes straight into the CAN
+payload.
+
+**Verifying CAN output without a CAN-to-USB adapter**: flip
+`CAN_LOOPBACK_VERIFY_ENABLED` to `true` in `src/can_bus.cpp` and reflash.
+This puts the SAME51's CAN0 peripheral into loopback mode, which routes
+every frame it transmits back into its own receiver (it still also drives
+the physical bus/TX pin, so an external analyzer would see the same
+traffic) and prints each one to Serial as `CAN rx id=0x... data=...` — a
+full round-trip check of the whole send path with nothing but the board
+itself. Flip it back to `false` for normal operation.
 
 ## Setting up PlatformIO (VS Code)
 
@@ -131,8 +184,8 @@ IDE. If you don't have it yet:
 5. The first time you open the project, PlatformIO downloads the
    `atmelsam` platform, the Arduino framework core for SAMD/Adafruit
    boards, and the libraries listed under `lib_deps` in `platformio.ini`
-   (currently just `Adafruit NeoPixel`). Watch the PlatformIO output panel
-   at the bottom for progress.
+   (`Adafruit NeoPixel` and `Adafruit CAN`). Watch the PlatformIO output
+   panel at the bottom for progress.
 
 You don't need the separate Arduino IDE or `arduino-cli` installed — the
 PlatformIO extension is self-contained.
@@ -164,15 +217,17 @@ actually enumerated (`pio device list`).
 
 ## Configuration
 
-A handful of `#define`s near the top of `src/main.cpp` control behavior —
-change and reflash, there's no runtime config:
+A handful of `#define`s control behavior — change and reflash, there's no
+runtime config:
 
-| Define | Default | Effect |
-|--------|---------|--------|
-| `I2C_CLOCK_HZ` | `400000` | I2C bus clock speed (Hz) for every bus. LSM6DSV supports up to `1000000` (Fast-mode+); `400000` is Fast-mode. Standard-mode is `100000`. |
-| `OFFLINE_RETRY_INTERVAL_MS` | `2000` | How often an eligible-but-currently-offline IMU is re-probed. |
-| `STATUS_PRINT_INTERVAL_MS` | `1000` | How often the combined status line is printed. |
-| `AUTO_RECONNECT_ENABLED` | `true` | Set to `false` to disable all reconnect attempts — an IMU that drops just stays `OFFLINE` until you flip this back and reflash. |
+| Define | Default | Where | Effect |
+|--------|---------|-------|--------|
+| `I2C_CLOCK_HZ` | `400000` | `src/imu.cpp` | I2C bus clock speed (Hz) for every bus. LSM6DSV supports up to `1000000` (Fast-mode+); `400000` is Fast-mode. Standard-mode is `100000`. |
+| `OFFLINE_RETRY_INTERVAL_MS` | `2000` | `src/imu.cpp` | How often an eligible-but-currently-offline IMU is re-probed. |
+| `STATUS_PRINT_INTERVAL_MS` | `1000` | `src/imu.cpp` | How often the combined status line is printed. |
+| `AUTO_RECONNECT_ENABLED` | `true` | `src/imu.cpp` | Set to `false` to disable all reconnect attempts — an IMU that drops just stays `OFFLINE` until you flip this back and reflash. |
+| `CAN_BITRATE` | `1000000` | `src/can_bus.cpp` | CAN bus bitrate in bps. |
+| `CAN_LOOPBACK_VERIFY_ENABLED` | `false` | `src/can_bus.cpp` | See [CAN output](#can-output) — set `true` to self-verify CAN sending without external hardware. |
 
 ## How detection & reconnect work
 
@@ -198,10 +253,24 @@ change and reflash, there's no runtime config:
   libc has no floating-point printf support by default — `%f`/`%7.1f`
   silently produces an empty string, not a compile or runtime error. Use
   `dtostrf()` (declared via `#include <avr/dtostrf.h>`) to format floats
-  instead, as `printStatusTable()` does.
+  instead, as `printStatusTable()` in `src/imu.cpp` does.
+- **A floating (unconnected) bus can occasionally read as idle and hang
+  boot.** `claimBusIfIdle()` samples SDA/SCL once to decide whether a bus
+  is safe to claim (see the previous gotcha for why). A plain `INPUT` on a
+  genuinely unconnected pin floats, and a floating read is undefined —
+  ambient noise can make it read HIGH by chance, letting a bus with
+  nothing attached get claimed and then hang forever on its first real
+  I2C transaction (no external hardware present to ACK/NACK it). This is
+  why the check uses `INPUT_PULLDOWN` instead of plain `INPUT`: it makes
+  an unconnected pin read a deterministic LOW, while a real external
+  pull-up (a few kOhm) still easily overpowers the weak internal
+  pull-down (tens of kOhm) on a properly wired bus. If you ever see boot
+  seem to hang and touching/grounding an unconnected sensor's SDA pin
+  unblocks it, that's this — it means a bus lacks pull-ups entirely (not
+  just "no sensor attached").
 - **Don't toggle `pinMode()` on a bus's SDA/SCL pins after it's been
   claimed.** Once a bus's `wire->begin()` has been called
-  (`claimBusIfIdle()` in `src/main.cpp`), doing a `pinMode(INPUT)` →
+  (`claimBusIfIdle()` in `src/imu.cpp`), doing a `pinMode(INPUT)` →
   `pinPeripheral(restore)` round-trip on those pins breaks I2C
   communication on that bus, even on otherwise-healthy hardware. This was
   the root cause of an earlier "no connection" bug and is why the idle
@@ -215,19 +284,26 @@ change and reflash, there's no runtime config:
   add a library later and see it suddenly fail to build with `Adafruit
   TinyUSB` compile errors, this is why.
 - **Bus 4 steals `Serial1`'s pins** (D0/D1) — see the topology table above.
+- **A misbehaving IMU can get stuck and stay stuck across MCU resets.**
+  While bringing up the SFLP/quaternion feature, one IMU ended up in a
+  state where it stopped responding to *any* I2C transaction, including a
+  basic `WHO_AM_I` read — reflashing or resetting the Feather didn't help,
+  since that only resets the MCU, not the sensor chip. Power-cycling the
+  IMU (removing its power entirely, not just the Feather's USB) cleared
+  it. If an IMU that previously worked suddenly won't respond to anything
+  and reflashing doesn't help, try power-cycling that sensor before
+  assuming it's a wiring or firmware problem.
 
 ## Repo layout
 
 ```
-src/main.cpp            all firmware logic (bus setup, IMU polling, status LED, Serial reporting)
-src/lsm6dsv_reg.c        vendored ST LSM6DSV register driver (do not hand-edit)
-include/lsm6dsv_reg.h    ^ its header
+src/main.cpp             setup()/loop() orchestration only -- calls into the modules below
+src/can_bus.h/.cpp        CAN0 setup, frame encoding/sending, loopback self-verification
+src/imu.h/.cpp            I2C bus management, IMU detection/reconnect, accel/gyro/quaternion reads, Serial status table
+src/status_led.h/.cpp     NeoPixel status indicator
+src/lsm6dsv_reg.c         vendored ST LSM6DSV register driver (do not hand-edit)
+include/lsm6dsv_reg.h     ^ its header
 docs/lsm6dsv.pdf                                 LSM6DSV datasheet
 docs/Adafruit Feather M4 Express CAN Pinout.pdf   Feather M4 CAN pinout reference
-platformio.ini           board/framework/library config
+platformio.ini            board/framework/library config
 ```
-
-## Not implemented yet
-
-Sending IMU data out over the Feather's onboard CAN transceiver is planned
-but not yet implemented in this codebase.
