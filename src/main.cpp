@@ -8,7 +8,11 @@ void setup()
   ledInit();
 
   Serial.begin(115200);
-  while (!Serial)
+  // Bounded wait only: on standalone power (no USB host attached) Serial
+  // never becomes ready, and an unbounded while(!Serial) would hang here
+  // forever -- exactly what caused the cold-start hang on the blue LED.
+  uint32_t serialWaitStart = millis();
+  while (!Serial && (millis() - serialWaitStart) < 2000)
   {
     delay(10);
   }
