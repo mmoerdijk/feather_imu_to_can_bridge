@@ -176,6 +176,55 @@ static bool claimBusIfIdle(bus_desc_t &bus)
   return true;
 }
 
+// Standard I2C bus-recovery procedure (NXP UM10204 S3.1.16): a slave that
+// was interrupted mid-transaction (e.g. platform_read()/platform_write()
+// aborting on an error without ever sending a STOP) can be left holding
+// SDA low indefinitely. A plain STOP can't fix that -- STOP needs SDA free
+// to rise, which it isn't while a slave is actively driving it low. Only a
+// master-generated clock train gives the slave a chance to finish
+// whatever bit it's stuck on and let go; that's what this does, followed
+// by a manufactured STOP once SDA is (or already was) free.
+//
+// This is deliberately unlike claimBusIfIdle()'s pinMode() round-trip,
+// which broke I2C when done on a bus whose SERCOM peripheral was still
+// enabled (see that function's comment). Here wire->end() fully disables
+// the peripheral *before* any pin is touched, so there's no live SERCOM
+// state for the remux to clash with -- the pins are inert GPIO for the
+// whole bit-banged sequence, exactly as during the original (working)
+// claim.
+static void recoverBus(bus_desc_t &bus)
+{
+  bus.wire->end();
+
+  pinMode(bus.pinSCL, OUTPUT);
+  pinMode(bus.pinSDA, INPUT); // read-only: let the slave/pull-up drive it
+
+  for (uint8_t i = 0; i < 9 && digitalRead(bus.pinSDA) == LOW; i++)
+  {
+    digitalWrite(bus.pinSCL, LOW);
+    delayMicroseconds(5);
+    digitalWrite(bus.pinSCL, HIGH);
+    delayMicroseconds(5);
+  }
+
+  // Manufacture a STOP condition: SDA rising while SCL is high.
+  pinMode(bus.pinSDA, OUTPUT);
+  digitalWrite(bus.pinSDA, LOW);
+  delayMicroseconds(5);
+  digitalWrite(bus.pinSCL, HIGH);
+  delayMicroseconds(5);
+  digitalWrite(bus.pinSDA, HIGH);
+  delayMicroseconds(5);
+
+  // Hand the pins back to the SERCOM peripheral and re-init the master --
+  // same begin()-then-remux order claimBusIfIdle() uses, since begin()
+  // re-applies each pin's *default* (non-I2C) mux.
+  bus.wire->begin();
+  pinPeripheral(bus.pinSDA, bus.muxType);
+  pinPeripheral(bus.pinSCL, bus.muxType);
+  bus.wire->setClock(I2C_CLOCK_HZ);
+}
+
 enum imu_init_result_t
 {
   IMU_INIT_OK,
@@ -377,8 +426,12 @@ void imuSystemPoll(uint32_t now)
     lsm6dsv_data_ready_t drdy;
     if (lsm6dsv_flag_data_ready_get(&imus[i].ctx, &drdy) != 0)
     {
-      // Lost communication with a previously-working sensor -- mark it
-      // offline so it gets reported and (if enabled) retried.
+      // Lost communication with a previously-working sensor. The failed
+      // transaction may have left this bus electrically wedged (see
+      // recoverBus()) -- clear that now rather than waiting for the next
+      // scheduled retry to discover the same wedge all over again.
+      recoverBus(buses[SENSOR_BUS[i]]);
+
       imus[i].present = false;
       imus[i].disconnectCount++;
       imus[i].nextRetryMs = now + OFFLINE_RETRY_INTERVAL_MS;
