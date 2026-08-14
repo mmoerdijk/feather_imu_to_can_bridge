@@ -15,6 +15,14 @@ void ledInit()
 
 void ledFlashDetectedCount(uint8_t count)
 {
+  if (count == 0)
+  {
+    // Nothing found at all -- leave the LED as-is (still blue from
+    // ledInit()) and let ledUpdateRunState() take over with a red blink
+    // from the very first loop() iteration, instead of settling green.
+    return;
+  }
+
   // Report the detection count as white flashes, then settle to green --
   // the LED's steady "everything's fine" run color.
   for (uint8_t i = 0; i < count; i++)
@@ -30,8 +38,30 @@ void ledFlashDetectedCount(uint8_t count)
   statusLed.show();
 }
 
-void ledUpdateRunState(bool anyOffline, bool anyEverDisconnected)
+#define NONE_DETECTED_BLINK_INTERVAL_MS 250
+
+void ledUpdateRunState(bool noneDetected, bool anyOffline, bool anyEverDisconnected)
 {
+  if (noneDetected)
+  {
+    // No IMU ever responded at boot -- the most severe state, and one
+    // anyOffline/anyEverDisconnected can never flag by themselves (both
+    // are computed only over IMUs that connected at boot). Blink red
+    // instead of a solid color so it can't be mistaken for a healthy
+    // solid-color state at a glance.
+    static uint32_t lastToggleMs = 0;
+    static bool ledOn = false;
+    uint32_t now = millis();
+    if ((int32_t)(now - lastToggleMs) >= NONE_DETECTED_BLINK_INTERVAL_MS)
+    {
+      lastToggleMs = now;
+      ledOn = !ledOn;
+      statusLed.setPixelColor(0, ledOn ? statusLed.Color(255, 0, 0) : 0);
+      statusLed.show();
+    }
+    return;
+  }
+
   // Worst-current-state wins: red (something's offline right now) beats
   // orange (recovered from a past drop) beats green (never had an issue).
   uint32_t ledColor = anyOffline            ? statusLed.Color(255, 0, 0)

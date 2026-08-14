@@ -28,9 +28,9 @@ extern "C"
 static TwoWire busWire1(&sercom3, 12, 13); // D12 (SDA), D13 (SCL) # tested works with 2 imus
 static TwoWire busWire2(&sercom4, 16, 17); // A2  (SDA), A3  (SCL) # tested works with 2 imus
 static TwoWire busWire3(&sercom0, 18, 15); // A4  (SDA), A1  (SCL) # tested works with 2 imus.
-static TwoWire
-    busWire4(&sercom5, 1,
-             0); // D1  (SDA), D0  (SCL) # tested works with 2 imus. -- takes over Serial1's pins
+static TwoWire busWire4(
+    &sercom5, 1,
+    0); // D1 TX (SDA), D0 Rx (SCL) # tested works with 2 imus. -- takes over Serial1's pins
 
 struct bus_desc_t
 {

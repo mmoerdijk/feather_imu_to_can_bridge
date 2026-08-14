@@ -28,6 +28,6 @@ void loop()
 
   canBusPoll();
   imuSystemPoll(now);
-  ledUpdateRunState(imuAnyOffline(), imuAnyEverDisconnected());
+  ledUpdateRunState(imuPresentCount() == 0, imuAnyOffline(), imuAnyEverDisconnected());
   imuMaybePrintStatusTable(now);
 }
