@@ -2,10 +2,14 @@
 
 #include <stdint.h>
 
-#define NUM_IMUS 10
+#include "i2c_buses.h"
+
+// 2 IMUs per I2C bus (one at 0x6A, one at 0x6B): 10 on the Feather, 4 on the
+// ESP32-S2 test build.
+#define NUM_IMUS (2 * NUM_BUSES)
 
 // Configures the 5 I2C buses and probes all 10 IMU slots once. Call once
-// from setup(), after canBusInit() and before ledFlashDetectedCount().
+// from setup(), after imuOutputInit() and before ledFlashDetectedCount().
 void imuSystemInit();
 
 // Number of IMUs that responded during imuSystemInit()'s boot probe -- the
@@ -13,7 +17,7 @@ void imuSystemInit();
 uint8_t imuPresentCount();
 
 // Retries offline-but-eligible IMUs on a timer, reads accel/gyro/quaternion
-// data as it becomes ready, and sends it over CAN (via sendCanFrame()).
+// data as it becomes ready, and hands it to imu_output.h.
 // Call once per loop() iteration.
 void imuSystemPoll(uint32_t now);
 

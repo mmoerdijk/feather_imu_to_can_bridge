@@ -1,5 +1,5 @@
-#include "can_bus.h"
 #include "imu.h"
+#include "imu_output.h"
 #include "status_led.h"
 #include <Arduino.h>
 
@@ -17,7 +17,7 @@ void setup()
     delay(10);
   }
 
-  canBusInit();
+  imuOutputInit();
   imuSystemInit();
   ledFlashDetectedCount(imuPresentCount());
 }
@@ -26,7 +26,7 @@ void loop()
 {
   uint32_t now = millis();
 
-  canBusPoll();
+  imuOutputPoll();
   imuSystemPoll(now);
   ledUpdateRunState(imuPresentCount() == 0, imuAnyOffline(), imuAnyEverDisconnected());
   imuMaybePrintStatusTable(now);

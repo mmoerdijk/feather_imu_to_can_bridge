@@ -27,7 +27,7 @@ jobs:
         run: pip install -U platformio
 
       - name: Build
-        run: pio run
+        run: pio run -e lolin_s2_mini -e adafruit_feather_m4_can
 
   lint:
     name: Formatting (clang-format, ruff)
