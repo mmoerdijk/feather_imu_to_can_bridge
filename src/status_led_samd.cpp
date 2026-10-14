@@ -1,3 +1,5 @@
+#if defined(ARDUINO_ARCH_SAMD)
+
 #include "status_led.h"
 #include <Adafruit_NeoPixel.h>
 
@@ -75,3 +77,5 @@ void ledUpdateRunState(bool noneDetected, bool anyOffline, bool anyEverDisconnec
     statusLed.show();
   }
 }
+
+#endif // ARDUINO_ARCH_SAMD

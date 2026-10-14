@@ -1,4 +1,7 @@
-#include "can_bus.h"
+#if defined(ARDUINO_ARCH_SAMD)
+
+#include "imu.h"
+#include "imu_output.h"
 #include <Arduino.h>
 #include <CANSAME5x.h>
 
@@ -15,7 +18,18 @@ static bool canReady = false;
 // reflash to verify CAN traffic again.
 #define CAN_LOOPBACK_VERIFY_ENABLED false
 
-void canBusInit()
+// CAN ID = base + IMU index, one ID range per data type.
+#define CAN_ID_ACCEL_BASE 0x100
+#define CAN_ID_GYRO_BASE 0x110
+#define CAN_ID_QUAT_BASE 0x120
+
+// Per-IMU, per-data-type sequence counters, wrap at 256 -- lets a receiver
+// detect dropped frames.
+static uint8_t accelSeq[NUM_IMUS];
+static uint8_t gyroSeq[NUM_IMUS];
+static uint8_t quatSeq[NUM_IMUS];
+
+void imuOutputInit()
 {
   pinMode(PIN_CAN_STANDBY, OUTPUT);
   digitalWrite(PIN_CAN_STANDBY, LOW); // turn off standby
@@ -32,11 +46,11 @@ void canBusInit()
 #endif
 }
 
-void canBusPoll()
+void imuOutputPoll()
 {
 #if CAN_LOOPBACK_VERIFY_ENABLED
   // Prints every CAN frame this board receives -- with CAN.loopback() in
-  // canBusInit(), that's every frame it just sent.
+  // imuOutputInit(), that's every frame it just sent.
   int canPacketSize = CAN.parsePacket();
   if (canPacketSize > 0)
   {
@@ -58,7 +72,11 @@ void canBusPoll()
 #endif
 }
 
-void sendCanFrame(uint32_t id, uint16_t v0, uint16_t v1, uint16_t v2, uint8_t &seq)
+// Packs 3 raw 16-bit values (already in each frame's wire encoding) plus a
+// sequence counter into one 8-byte CAN frame: [v0 LE][v1 LE][v2 LE][seq]
+// [reserved=0]. No-ops if CAN.begin() never succeeded, so a CAN
+// wiring/hardware problem doesn't affect IMU polling.
+static void sendCanFrame(uint32_t id, uint16_t v0, uint16_t v1, uint16_t v2, uint8_t &seq)
 {
   if (!canReady)
   {
@@ -79,3 +97,20 @@ void sendCanFrame(uint32_t id, uint16_t v0, uint16_t v1, uint16_t v2, uint8_t &s
   CAN.write(payload, sizeof(payload));
   CAN.endPacket();
 }
+
+void imuOutputAccel(uint8_t imu, int16_t xMg, int16_t yMg, int16_t zMg)
+{
+  sendCanFrame(CAN_ID_ACCEL_BASE + imu, xMg, yMg, zMg, accelSeq[imu]);
+}
+
+void imuOutputGyro(uint8_t imu, int16_t xDdps, int16_t yDdps, int16_t zDdps)
+{
+  sendCanFrame(CAN_ID_GYRO_BASE + imu, xDdps, yDdps, zDdps, gyroSeq[imu]);
+}
+
+void imuOutputQuat(uint8_t imu, uint16_t qx, uint16_t qy, uint16_t qz)
+{
+  sendCanFrame(CAN_ID_QUAT_BASE + imu, qx, qy, qz, quatSeq[imu]);
+}
+
+#endif // ARDUINO_ARCH_SAMD

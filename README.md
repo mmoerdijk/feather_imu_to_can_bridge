@@ -1,7 +1,8 @@
-# IMU Reader — Feather M4 CAN
+# IMU Reader — Feather M4 CAN / ESP32-S2
 
-Firmware for an Adafruit Feather M4 CAN Express that reads up to 10 ST
-LSM6DSV IMUs over five parallel I2C buses, sends accelerometer, gyroscope,
+Firmware for an Adafruit Feather M4 CAN Express — or, as a cut-down test
+build, a WEMOS LOLIN S2 Mini (ESP32-S2), see [ESP32-S2 test build](#esp32-s2-test-build-lolin-s2-mini)
+— that reads up to 10 ST LSM6DSV IMUs over five parallel I2C buses, sends accelerometer, gyroscope,
 and orientation (quaternion) data out over CAN, reports per-sensor
 connection health over USB Serial, and shows an at-a-glance health summary
 on the board's onboard NeoPixel.
@@ -13,6 +14,7 @@ I2C bus, for the IMU sensor boards.
 ## Contents
 
 - [Hardware overview](#hardware-overview)
+- [ESP32-S2 test build (LOLIN S2 Mini)](#esp32-s2-test-build-lolin-s2-mini)
 - [I2C bus topology](#i2c-bus-topology)
 - [Status LED](#status-led)
 - [Serial output](#serial-output)
@@ -42,9 +44,68 @@ I2C bus, for the IMU sensor boards.
   tied low → `0x6A`, tied high → `0x6B`. Two IMUs (one at each address)
   share each physical I2C bus.
 
+## ESP32-S2 test build (LOLIN S2 Mini)
+
+For bench testing, the firmware also builds for a **WEMOS LOLIN S2 Mini**
+(PlatformIO env `lolin_s2_mini`, the default env). It's a cut-down version:
+**2 I2C buses (4 IMUs), and no CAN** — readings are printed to Serial
+instead. Detection, reconnect and the status line behave as on the Feather;
+only the platform layer differs (`src/*_esp32.cpp` vs. `src/*_samd.cpp`).
+The S2 Mini can't plug into the Feather-footprint `adapter_board`, so it's
+wired by hand:
+
+| Function | S2 Mini pins | IMU slots |
+|----------|--------------|-----------|
+| I2C bus 0 (`Wire`) | GPIO9 (SDA), GPIO8 (SCL) | IMU0 (0x6A), IMU1 (0x6B) |
+| I2C bus 1 (`Wire1`) | GPIO3 (SDA), GPIO4 (SCL) | IMU2 (0x6A), IMU3 (0x6B) |
+| Status LED | GPIO15 (onboard blue LED) | |
+
+![Wiring diagram: S2 Mini with 2 I2C buses and 2 IMUs each](docs/images/wiring_diagram_s2_mini.svg)
+
+Differences from the Feather:
+
+- **I2C**: the ESP32-S2 has 2 hardware I2C controllers, one per bus. Same
+  pull-up rule as the Feather: the pull-ups come from the IMU boards.
+- **Output**: one text line per reading on Serial (115200 baud, the S2's
+  native USB port), interleaved with the once-per-second status line:
+
+  ```
+  IMU0 acc   -12     3  1002 mg
+  IMU0 gyr    0.4   -1.2    0.0 dps
+  IMU0 quat w=0.9998 x=0.0123 y=-0.0051 z=0.0002
+  ```
+
+  Units match the CAN frames (accel rounded to 1 mg, gyro to 0.1 dps); the
+  quaternion's half-floats are decoded and qw is reconstructed. Nothing is
+  printed while no terminal has the port open.
+- **Status LED**: a single-color LED instead of the NeoPixel, so colors
+  become blink patterns:
+
+  | Feather color | S2 Mini LED |
+  |---------------|-------------|
+  | Blue (detecting) | Solid on |
+  | White flashes (found count) | Off briefly, then one slow flash per IMU found |
+  | Green | Solid on |
+  | Orange | On, with a short off-blip once per second |
+  | Red | Blinking twice per second |
+  | Red blink (none found) | Rapid flicker |
+
+- **Serial** is the S2's native USB CDC port. Uploading uses the 1200bps-touch
+  reset into the ROM bootloader, which re-enumerates under a different COM
+  port; if the board is stuck (e.g. a crashing firmware), hold **0**, tap
+  **RST**, release **0** to force the bootloader, and press **RST** after
+  flashing.
+- The ESP32 env uses the [pioarduino](https://github.com/pioarduino/platform-espressif32)
+  platform (Arduino-ESP32 core 3.x). On first build it installs extra Python
+  packages and the toolchain. **On Windows, run that first build from
+  PowerShell/cmd, not Git Bash** — ESP-IDF's tool installer refuses to run
+  under MSYS/MinGW and the build then fails with
+  `'xtensa-esp32s2-elf-g++' is not recognized`.
+
 ## I2C bus topology
 
-The M4's default `Wire` only gives you one I2C bus. To talk to 10 IMUs at
+*(Feather M4 CAN — see above for the S2 Mini.)* The M4's default `Wire`
+only gives you one I2C bus. To talk to 10 IMUs at
 once, this firmware repurposes four additional SERCOM peripherals as extra
 `TwoWire` instances, so there are **5 physical I2C buses, 2 IMUs each**:
 
@@ -66,9 +127,9 @@ Notes:
   valid idle-high state, which is why every IMU on it reports
   `OFFLINE (bus not ready -- check wiring/pull-ups)` — that's this specific
   failure mode, not a generic "not detected".
-- Bus/pin assignments live in `buses[]` in `src/imu.cpp`; which IMU index
-  maps to which bus/address lives in `SENSOR_BUS[]` / `SENSOR_ADDR[]` right
-  below it.
+- Bus/pin assignments live in `buses[]` in `src/i2c_buses_samd.cpp`; which
+  IMU index maps to which bus/address lives in `sensorBus()` /
+  `sensorAddr()` in `src/imu.cpp`.
 
 Same information as a wiring diagram:
 
@@ -129,7 +190,7 @@ there's no batching/timer, a frame goes out the moment new data is read.
 
 - **Library**: [Adafruit CAN](https://github.com/adafruit/Adafruit_CAN)
   (`CANSAME5x` class), which wraps the SAME51's built-in CAN0 peripheral.
-- **Bitrate**: 1 Mbps (`CAN_BITRATE` in `src/can_bus.cpp`).
+- **Bitrate**: 1 Mbps (`CAN_BITRATE` in `src/imu_output_can_samd.cpp`).
 - **Frame size**: classic CAN, 8 bytes max (no CAN FD).
 
 Every frame has the same shape — 3 values (2 bytes each, little-endian) + a
@@ -162,7 +223,7 @@ for this frame — it copies the FIFO record's raw bytes straight into the CAN
 payload.
 
 **Verifying CAN output without a CAN-to-USB adapter**: flip
-`CAN_LOOPBACK_VERIFY_ENABLED` to `true` in `src/can_bus.cpp` and reflash.
+`CAN_LOOPBACK_VERIFY_ENABLED` to `true` in `src/imu_output_can_samd.cpp` and reflash.
 This puts the SAME51's CAN0 peripheral into loopback mode, which routes
 every frame it transmits back into its own receiver (it still also drives
 the physical bus/TX pin, so an external analyzer would see the same
@@ -215,9 +276,12 @@ step:
 Or via the CLI:
 
 ```sh
-pio run                 # build
+pio run                 # build (default env: lolin_s2_mini)
 pio run -t upload       # build + flash over USB
 pio device monitor      # open a serial monitor (115200 baud, matches platformio.ini)
+
+pio run -e adafruit_feather_m4_can             # build for the Feather instead
+pio run -e adafruit_feather_m4_can -t upload   # ... and flash it
 ```
 
 Plug the Feather M4 CAN in via USB before uploading. Uploading uses the
@@ -238,12 +302,12 @@ runtime config:
 
 | Define | Default | Where | Effect |
 |--------|---------|-------|--------|
-| `I2C_CLOCK_HZ` | `400000` | `src/imu.cpp` | I2C bus clock speed (Hz) for every bus. LSM6DSV supports up to `1000000` (Fast-mode+); `400000` is Fast-mode. Standard-mode is `100000`. |
+| `I2C_CLOCK_HZ` | `400000` | `src/i2c_buses.h` | I2C bus clock speed (Hz) for every bus. LSM6DSV supports up to `1000000` (Fast-mode+); `400000` is Fast-mode. Standard-mode is `100000`. |
 | `OFFLINE_RETRY_INTERVAL_MS` | `2000` | `src/imu.cpp` | How often an eligible-but-currently-offline IMU is re-probed. |
 | `STATUS_PRINT_INTERVAL_MS` | `1000` | `src/imu.cpp` | How often the combined status line is printed. |
 | `AUTO_RECONNECT_ENABLED` | `true` | `src/imu.cpp` | Set to `false` to disable all reconnect attempts — an IMU that drops just stays `OFFLINE` until you flip this back and reflash. |
-| `CAN_BITRATE` | `1000000` | `src/can_bus.cpp` | CAN bus bitrate in bps. |
-| `CAN_LOOPBACK_VERIFY_ENABLED` | `false` | `src/can_bus.cpp` | See [CAN output](#can-output) — set `true` to self-verify CAN sending without external hardware. |
+| `CAN_BITRATE` | `1000000` | `src/imu_output_can_samd.cpp` | CAN bus bitrate in bps. |
+| `CAN_LOOPBACK_VERIFY_ENABLED` | `false` | `src/imu_output_can_samd.cpp` | See [CAN output](#can-output) — set `true` to self-verify CAN sending without external hardware. |
 
 ## How detection & reconnect work
 
@@ -265,13 +329,13 @@ runtime config:
 
 ## Known quirks / gotchas
 
-- **No `%f` in `printf`/`snprintf` on this toolchain.** This Arduino core's
+- **No `%f` in `printf`/`snprintf` on the Feather toolchain.** This Arduino core's
   libc has no floating-point printf support by default — `%f`/`%7.1f`
   silently produces an empty string, not a compile or runtime error. Use
   `dtostrf()` (declared via `#include <avr/dtostrf.h>`) to format floats
   instead, as `printStatusTable()` in `src/imu.cpp` does.
 - **A floating (unconnected) bus can occasionally read as idle and hang
-  boot.** `claimBusIfIdle()` samples SDA/SCL once to decide whether a bus
+  boot.** `i2cBusClaimIfIdle()` samples SDA/SCL once to decide whether a bus
   is safe to claim (see the previous gotcha for why). A plain `INPUT` on a
   genuinely unconnected pin floats, and a floating read is undefined —
   ambient noise can make it read HIGH by chance, letting a bus with
@@ -286,7 +350,7 @@ runtime config:
   just "no sensor attached").
 - **Don't toggle `pinMode()` on a bus's SDA/SCL pins after it's been
   claimed.** Once a bus's `wire->begin()` has been called
-  (`claimBusIfIdle()` in `src/imu.cpp`), doing a `pinMode(INPUT)` →
+  (`i2cBusClaimIfIdle()` in `src/i2c_buses_samd.cpp`; Feather only), doing a `pinMode(INPUT)` →
   `pinPeripheral(restore)` round-trip on those pins breaks I2C
   communication on that bus, even on otherwise-healthy hardware. This was
   the root cause of an earlier "no connection" bug and is why the idle
@@ -314,9 +378,10 @@ runtime config:
 
 ```
 src/main.cpp             setup()/loop() orchestration only -- calls into the modules below
-src/can_bus.h/.cpp        CAN0 setup, frame encoding/sending, loopback self-verification
-src/imu.h/.cpp            I2C bus management, IMU detection/reconnect, accel/gyro/quaternion reads, Serial status table
-src/status_led.h/.cpp     NeoPixel status indicator
+src/imu_output.h          where readings go: imu_output_can_samd.cpp (CAN frames) / imu_output_serial_esp32.cpp (Serial text)
+src/i2c_buses.h           I2C bus layer: i2c_buses_samd.cpp (5 SERCOMs) / i2c_buses_esp32.cpp (2 controllers)
+src/imu.h/.cpp            IMU detection/reconnect, accel/gyro/quaternion reads, Serial status table (platform-neutral)
+src/status_led.h          status LED interface: status_led_samd.cpp (NeoPixel) / status_led_esp32.cpp (GPIO15 LED)
 src/lsm6dsv_reg.c         vendored ST LSM6DSV register driver (do not hand-edit)
 include/lsm6dsv_reg.h     ^ its header
 docs/lsm6dsv.pdf                                 LSM6DSV datasheet
